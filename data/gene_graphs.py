@@ -54,6 +54,15 @@ class RegNetGraph(GeneInteractionGraph):
         self.nx_graph = nx.OrderedGraph(nx.readwrite.gpickle.read_gpickle(at.get(self.at_hash, datastore=self.datastore)))
 
 
+class EvolvedGraph(GeneInteractionGraph):
+    def __init__(self, adjacency_path):
+        self.adjacency_path = adjacency_path
+        super(EvolvedGraph, self).__init__()
+
+    def load_data(self):
+        self.nx_graph = nx.OrderedGraph(nx.from_numpy_matrix(np.load(self.adjacency_path)))
+
+
 class GeneManiaGraph(GeneInteractionGraph):
     def __init__(self, at_hash="5adbacb0b7ea663ac4a7758d39250a1bd28c5b40", datastore=""):
         self.at_hash = at_hash
