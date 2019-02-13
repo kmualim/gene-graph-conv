@@ -12,53 +12,9 @@ import sklearn.cluster
 import joblib
 import numpy as np
 from sklearn.cluster import KMeans
-from torch_scatter import scatter_max, scatter_add, scatter_mul
+from torch_scatter import scatter_max
 
-# try:
-#     from torch_scatter import scatter_max, scatter_add
-#     def max_pool(x, centroids):
-#         shape = x.shape
-#         x = x.view(x.shape[0] * x.shape[1], -1)
-#         x = scatter_max(x, centroids)[0]
-#         x = x.view(shape[0], shape[1], -1)  # put back in ex, node, channel
-#         return x
-# except ImportError:
-#     def max_pool(x, centroids):
-#         x = x.permute(0, 2, 1).contiguous()  # put in ex, channel, node
-#         original_x_shape = x.size()
-#         x = x.view(-1, x.shape[-1])
-#         #adj = adj.to_dense()
-#         temp = []
-#         for i in range(adj.shape[0]):
-#             neighbors = np.argwhere(centroids==i)
-#             if len(neighbors) != 0:
-#                 temp.append(x[neighbors].max(dim=1)[0])
-#             else:
-#                 temp.append(x[i])
-#         max_value = torch.stack(temp)
-#         max_value.view(original_x_shape).permute(0, 2, 1).contiguous()
-#         return max_value
-
-# want inputs of shape ex, node, channels
-
-def max_pool_torch_scatter(x, centroids):
-    ex, channels, nodes = x.shape
-    x = x.view(ex * channels, -1)
-    x = scatter_max(x, centroids)[0]
-    x = x.view(ex, channels, -1)
-    x = x.permute(0, 2, 1).contiguous()
-    return x
-
-def max_pool_dense(x, centroids, adj):
-    ex, channels, nodes  = x.shape
-    x = x.view(-1, nodes, 1)
-    res = (x * adj).max(dim=1)[0]
-    res = res.view(ex, channels, nodes)
-    res = res.permute(0, 2 ,1).contiguous()
-    res = res.narrow(1, 0, len(set(centroids.cpu().numpy()))).contiguous()
-    return res
-
-def max_pool_dense_iter(x, centroids, adj):
+def max_pool(x, centroids, adj):
     ex, channels, nodes = x.shape
     x = x.view(-1, nodes, 1)
 
@@ -66,89 +22,17 @@ def max_pool_dense_iter(x, centroids, adj):
     for i in range(len(x)):
         temp.append((x[i] * adj).max(dim=0)[0])
     res = torch.stack(temp)
-
-    res = res.view(ex, channels, nodes)
-    res = res.narrow(2, 0, len(set(centroids.cpu().numpy())))
-    res = res.permute(0, 2, 1).contiguous()  # put back in ex, node, channel
+    res = scatter_max(src=res, index=centroids, dim=1, fill_value=-1000)[0]
+    res = res.view(ex, channels, -1)
+    res = res.permute(0, 2, 1).contiguous()
     return res
-
-# def sparse_max_pool(x, centroids, adj):
-#     ex, channels, nodes = x.shape
-#     x = x.view(-1, nodes)
-#
-#     temp = []
-#     for i in range(adj.shape[0]):
-#         neighbors_to_pool = x[:, adj[i].nonzero().flatten()]
-#         maxed = neighbors_to_pool.max(dim=1)[0]
-#         temp.append(maxed)
-#     res = torch.stack(temp)
-#     res = res.narrow(0, 0, len(set(centroids.cpu().numpy())))
-#
-#     res = res.view(ex, -1, channels)
-#     #res = res.permute(0, 2, 1).contiguous()  # put back in ex, node, channel
-#     return res
-
-# def sparse_max_pool(x, centroids, adj):
-#     ex, channels, nodes = x.shape
-#     x = x.view(-1, nodes)
-#
-#     temp = []
-#     for i in range(adj.shape[0]):
-#         neighbors_to_pool = x[:, adj[i].nonzero().flatten()]
-#         maxed = neighbors_to_pool.max(dim=1)[0]
-#         temp.append(maxed)
-#     res = torch.stack(temp)
-#     res = res.narrow(0, 0, len(set(centroids.cpu().numpy())))
-#     res = res.view(ex, channels, nodes)
-#     res = res.permute(0, 2, 1).contiguous()  # put back in ex, node, channel
-
-    # res = res.narrow(0, 0, len(set(centroids.cpu().numpy())))
-    # res = res.view(ex, -1, channels).contiguous()
-    #res = res.permute(0, 2, 1).contiguous()
-    return res
-
-
-
-from torch_scatter import scatter_max, scatter_add
-def max_pool(x, centroids):
-    shape = x.shape
-    x = x.view(x.shape[0] * x.shape[1], -1)
-    x = scatter_max(x, centroids)[0]
-    x = x.view(shape[0], shape[1], -1)  # put back in ex, node, channel
-    return x
-
-# try:
-#     from torch_scatter import scatter_max, scatter_add
-#     def max_pool(x, centroids):
-#         shape = x.shape
-#         x = x.view(x.shape[0] * x.shape[1], -1)
-#         x = scatter_max(x, centroids)[0]
-#         x = x.view(shape[0], shape[1], -1)  # put back in ex, node, channel
-#         return x
-# except ImportError:
-# def max_pool(x, centroids, adj):
-#     ex, channels, nodes = x.shape
-#     x = x.view(-1, nodes, 1)
-
-#     temp = []
-#     for i in range(len(x)):
-#         temp.append((x[i] * adj).max(dim=0)[0])
-#     res = torch.stack(temp)
-
-#     res = res.view(ex, channels, nodes)
-#     res = res.narrow(2, 0, len(set(centroids.cpu().numpy())))
-#     #res = res.permute(0, 2, 1).contiguous()  # put back in ex, node, channel
-#     return res
 
 # We use this to calculate the noramlized laplacian for our graph convolution signal propagation
 def norm_laplacian(adj):
     D = np.array(adj.astype(bool).sum(axis=0))[0].astype("float32")
     D_inv = np.divide(1., np.sqrt(D), out=np.zeros_like(D), where=D!=0.)
     D_inv_diag = sparse.diags(D_inv)
-    try:
-        adj = D_inv_diag.dot(adj).dot(D_inv_diag)
-    except Exception as e:
-        print(e)
+    adj = D_inv_diag.dot(adj).dot(D_inv_diag)
     return adj
 
 # We have several methods for clustering the graph. We use them to define the shape of the model and pooling
@@ -196,32 +80,35 @@ def kmeans_clustering(adj, n_clusters):
 
 
 # This function takes in the full adjacency matrix and a number of layers, then returns a bunch of clustered adjacencies
-def setup_aggregates(adj, nb_layer, cluster_type="hierarchy"):
-    aggregates = [adj]
+def setup_aggregates(adj, nb_layer, aggregation="hierarchy", agg_reduce=2):
+    adj = (adj > 0.).astype(int)
+    adj.setdiag(np.ones(adj.shape[0]))
+    adjs = [norm_laplacian(adj)]
     centroids = []
-
     for _ in range(nb_layer):
-        adj = norm_laplacian(adj)
-
-        if not cluster_type:
-            aggregates.append(adj)
-            centroids.append(np.array(range(adj.shape[0])))
-            continue
-
-        # Determine what kind of clustering should we perform on our adjacency matrix?
-        n_clusters = int(adj.shape[0] / 2)
-        if cluster_type == "hierarchy":
+        n_clusters = int(adj.shape[0] / agg_reduce)
+        if aggregation == "hierarchy":
             clusters = hierarchical_clustering(adj, n_clusters)
-        elif cluster_type == "random":
+        elif aggregation == "random":
             clusters = random_clustering(adj, n_clusters)
-        elif cluster_type == "kmeans":
+        elif aggregation == "kmeans":
             clusters = kmeans_clustering(adj, n_clusters)
+        else:
+            clusters = np.array(range(adj.shape[0]))
+        _, to_keep = np.unique(clusters, return_index=True)
 
-        # When we cluster the adjacency matrix to reduce the graph dimensionality, we do a scatter add to preserve the edge weights.
-        # We may want to replace this pytorch-scatter call with a call to the relatively undocumented pytorch _scatter_add function,
-        # or change this to a mask (or slice?)
-        adj = scatter_add(torch.FloatTensor(adj.toarray()), torch.LongTensor(clusters)).numpy()[:n_clusters]
-        adj = sparse.csr_matrix(adj)
-        aggregates.append(adj)
-        centroids.append(clusters)
-    return aggregates, centroids
+        adj = torch.zeros(adj.shape).index_add_(1,  torch.LongTensor(clusters), torch.FloatTensor(adj.todense()))
+        adj = torch.index_select(adj, 1, torch.LongTensor(to_keep))[:len(to_keep)]
+        adj = sparse.csr_matrix(adj > 0)
+
+        adjs.append(norm_laplacian(adj))
+        centroids.append(to_keep)
+    return adjs, centroids
+
+def save_computations(self, input, output):
+    setattr(self, "input", input)
+    setattr(self, "output", output)
+
+def get_every_n(a, n=2):
+    for i in range(a.shape[0] // 2):
+        yield a[2*i:2*(i+1)]
