@@ -134,7 +134,7 @@ class TCGATask(Dataset):
         # load the cancer specific matrix
         matrix = pd.read_csv(os.path.join(data_dir, 'clinicalMatrices', cancer + '_clinicalMatrix'), delimiter='\t')
         # TODO: verify we don't need this
-        #matrix.drop_duplicates(subset=['sampleID'], keep='first', inplace=True)
+        matrix.drop_duplicates(subset=['sampleID'], keep='first', inplace=True)
         ids = matrix['sampleID']
         attribute = matrix[task_variable]
 
