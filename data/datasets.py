@@ -1,7 +1,7 @@
 """Imports Datasets"""
 import glob
 import os
-import urllib
+import urllib.request as urllib
 import zipfile
 
 import h5py
@@ -143,10 +143,10 @@ class EcoliDataset(GeneDataset):
 
         # Make the imported data accessible on the dataset object
         self.df = pd.DataFrame(expressions)
+        self.node_names = genes
         self.df.columns = self.node_names
         self.nb_nodes = self.df.shape[1]
         self.sample_names = contrasts
-        self.node_names = genes
 
     def __getitem__(self, idx):
         sample = self.df.iloc[idx]
